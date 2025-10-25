@@ -133,6 +133,41 @@ Error creating SPIFFS image: file too large
    ```
    Note: This reduces available flash for firmware updates
 
+### Error: "Failed to create SPIFFS image for partition 'storage'"
+
+**Symptom:**
+```
+Failed to create SPIFFS image for partition 'storage'. Check project configuration if using the correct partition table file.
+```
+
+**Root Cause:**
+The ESP-IDF build system cannot locate the custom partition table file because the configuration doesn't specify which file to use.
+
+**Solution:**
+1. Ensure `sdkconfig.bsp.esp-box-3` (or `sdkconfig.defaults.esp32s3`) contains:
+   ```
+   CONFIG_PARTITION_TABLE_CUSTOM=y
+   CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+   ```
+
+2. Verify `partitions.csv` exists in the project root directory
+
+3. Clean and rebuild the project:
+   ```bash
+   idf.py fullclean
+   idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.bsp.esp-box-3" reconfigure
+   idf.py build
+   ```
+
+**Additional Checks:**
+- Ensure the partition name in `CMakeLists.txt` matches the partition table:
+  ```cmake
+  spiffs_create_partition_image(storage spiffs_content FLASH_IN_PROJECT)
+  ```
+  The first parameter (`storage`) must match a partition name in `partitions.csv`
+
+- Verify `partitions.csv` has correct format (no trailing spaces, valid CSV syntax)
+
 ## Flash Issues
 
 ### Error: "Serial port not found"
