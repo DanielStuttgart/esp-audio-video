@@ -16,7 +16,7 @@ The implementation follows the architecture from [esp-tflite-micro](https://gith
 
 1. **Audio Capture**: Records audio at 16kHz, 16-bit, mono using the onboard microphone
 2. **Ring Buffer**: Maintains a sliding window of audio samples (1 second)
-3. **Feature Extraction**: Converts audio to spectral features (simplified energy-based approach - see note below)
+3. **Feature Extraction**: Converts audio to spectral features (simplified energy-based approach - may result in lower accuracy, see note below)
 4. **TFLite Inference**: Runs the micro speech model on extracted features
 5. **Post-processing**: Identifies the most confident command
 6. **Display**: Shows recognized commands on the UI
@@ -84,6 +84,7 @@ The TFLite model version doesn't match the TFLite Micro library version. Ensure 
    - The threshold `150` (out of 255, or ~59%) can be lowered for more sensitivity or raised for higher confidence
    - Lower values (e.g., 100-130) will detect more commands but may have more false positives
    - Higher values (e.g., 180-200) will only report very confident matches
+   - **Note**: Due to the simplified energy-based feature extraction, you may need to experiment with lower thresholds compared to a proper MFCC implementation, as the confidence distribution may differ
 
 ### Out of memory errors
 1. Increase the task stack size in `speech_event_cb` (currently 8192 bytes)
@@ -124,7 +125,8 @@ Microphone → esp_codec_dev_read() → recording_buffer (1024 bytes)
   - No mel filterbank application
   - No DCT (Discrete Cosine Transform) for cepstral coefficients
   - Impact: Lower accuracy compared to proper MFCC, may struggle with similar-sounding words
-  - For production use, integrate proper MFCC from esp-tflite-micro's feature_provider
+  - Current implementation: See `extract_features()` function in `main/speech_recognition.cpp`
+  - For production use, integrate proper MFCC from esp-tflite-micro's `feature_provider.cc`
 - [ ] Support for more commands (requires retraining model)
 - [ ] Adjustable sensitivity/confidence threshold in UI
 - [ ] Audio visualization during recording
