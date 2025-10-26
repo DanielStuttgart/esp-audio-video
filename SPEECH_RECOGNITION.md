@@ -16,10 +16,12 @@ The implementation follows the architecture from [esp-tflite-micro](https://gith
 
 1. **Audio Capture**: Records audio at 16kHz, 16-bit, mono using the onboard microphone
 2. **Ring Buffer**: Maintains a sliding window of audio samples (1 second)
-3. **Feature Extraction**: Converts audio to spectral features (simplified MFCC-like)
+3. **Feature Extraction**: Converts audio to spectral features (simplified energy-based approach - see note below)
 4. **TFLite Inference**: Runs the micro speech model on extracted features
 5. **Post-processing**: Identifies the most confident command
 6. **Display**: Shows recognized commands on the UI
+
+**Note on Feature Extraction**: The current implementation uses a simplified energy-based feature extraction instead of full MFCC (Mel-Frequency Cepstral Coefficients). This may result in lower accuracy compared to the reference implementation. For production use, consider integrating the proper MFCC feature extraction from esp-tflite-micro's `feature_provider.cc`.
 
 ## Getting the TFLite Model
 
@@ -77,7 +79,11 @@ The TFLite model version doesn't match the TFLite Micro library version. Ensure 
 1. Check microphone placement and ambient noise
 2. Speak clearly and at normal volume
 3. Ensure the model is the correct trained model (not the placeholder)
-4. The confidence threshold is set to 150/255 (59%) - adjust if needed in `app_disp_fs.c`
+4. The confidence threshold can be adjusted in `app_disp_fs.c` in the `recog_speech()` function:
+   - Look for `if (command != SPEECH_CMD_SILENCE && score > 150)`
+   - The threshold `150` (out of 255, or ~59%) can be lowered for more sensitivity or raised for higher confidence
+   - Lower values (e.g., 100-130) will detect more commands but may have more false positives
+   - Higher values (e.g., 180-200) will only report very confident matches
 
 ### Out of memory errors
 1. Increase the task stack size in `speech_event_cb` (currently 8192 bytes)
@@ -113,7 +119,12 @@ Microphone → esp_codec_dev_read() → recording_buffer (1024 bytes)
 
 ## Future Improvements
 
-- [ ] Add proper MFCC feature extraction (currently simplified)
+- [ ] **Add proper MFCC feature extraction**: Current implementation uses a simplified energy-based approach instead of full MFCC (Mel-Frequency Cepstral Coefficients). The simplifications include:
+  - No FFT computation (uses simple energy calculation instead)
+  - No mel filterbank application
+  - No DCT (Discrete Cosine Transform) for cepstral coefficients
+  - Impact: Lower accuracy compared to proper MFCC, may struggle with similar-sounding words
+  - For production use, integrate proper MFCC from esp-tflite-micro's feature_provider
 - [ ] Support for more commands (requires retraining model)
 - [ ] Adjustable sensitivity/confidence threshold in UI
 - [ ] Audio visualization during recording
