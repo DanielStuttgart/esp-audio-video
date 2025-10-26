@@ -19,6 +19,7 @@
 // Model and feature provider
 #include "model.h"
 #include "micro_model_settings.h"
+#include "micro_features_generator.h"
 
 static const char *TAG = "speech_recog";
 
@@ -35,6 +36,9 @@ namespace {
 
 // Feature buffer for audio samples
 static int8_t g_feature_buffer[SPEECH_FEATURE_ELEMENT_COUNT];
+
+// Feature data structure used by micro_features_generator
+static Features g_features;
 
 // Audio history buffer (ring buffer)
 #define AUDIO_BUFFER_SIZE 16000  // 1 second at 16kHz
@@ -87,46 +91,40 @@ bool speech_recognition_init(void)
     memset(g_audio_buffer, 0, sizeof(g_audio_buffer));
     g_audio_buffer_pos = 0;
     
+    // Initialize the micro features generator
+    TfLiteStatus feature_status = InitializeMicroFeatures();
+    if (feature_status != kTfLiteOk) {
+        ESP_LOGE(TAG, "InitializeMicroFeatures() failed");
+        return false;
+    }
+    
     ESP_LOGI(TAG, "Speech recognition initialized successfully");
     return true;
 }
 
-// Simple feature extraction (simplified MFCC-like approach)
-// In a full implementation, this would do proper MFCC feature extraction
-static void extract_features(const int16_t *audio_data, int audio_length, int8_t *feature_data)
+// Proper feature extraction using the audio preprocessor model
+// This uses the same feature extraction as the micro_speech example
+static bool extract_features(const int16_t *audio_data, int audio_length, int8_t *feature_data)
 {
-    // This is a simplified version - proper implementation would use
-    // FFT and mel filterbank for MFCC extraction
+    // Use the micro features generator which properly implements
+    // FFT and mel filterbank for MFCC-like extraction
+    TfLiteStatus generate_status = GenerateFeatures(audio_data, audio_length, &g_features);
+    if (generate_status != kTfLiteOk) {
+        ESP_LOGE(TAG, "GenerateFeatures() failed");
+        return false;
+    }
     
-    const int samples_per_slice = audio_length / SPEECH_FEATURE_SLICE_COUNT;
-    
-    for (int i = 0; i < SPEECH_FEATURE_SLICE_COUNT; i++) {
-        const int16_t *slice_start = audio_data + (i * samples_per_slice);
-        
-        // Calculate simple spectral features for this time slice
-        for (int j = 0; j < SPEECH_FEATURE_SLICE_SIZE; j++) {
-            // Simple energy calculation in frequency-like bands
-            // This is a placeholder - real implementation needs proper FFT/MFCC
-            int32_t energy = 0;
-            int band_size = samples_per_slice / SPEECH_FEATURE_SLICE_SIZE;
-            
-            for (int k = 0; k < band_size && (j * band_size + k) < samples_per_slice; k++) {
-                int idx = j * band_size + k;
-                if (idx < samples_per_slice) {
-                    int16_t sample = slice_start[idx];
-                    energy += (sample * sample) / 1024;  // Normalize
-                }
-            }
-            
-            // Quantize to int8 range
-            energy = energy / (band_size + 1);
-            if (energy > 127) energy = 127;
-            if (energy < -128) energy = -128;
-            
-            feature_data[i * SPEECH_FEATURE_SLICE_SIZE + j] = (int8_t)energy;
+    // Copy features from 2D array to 1D buffer
+    // Features are organized as [time_slice][frequency_bin]
+    for (int i = 0; i < kFeatureCount; ++i) {
+        for (int j = 0; j < kFeatureSize; ++j) {
+            feature_data[i * kFeatureSize + j] = g_features[i][j];
         }
     }
+    
+    return true;
 }
+
 
 bool speech_recognition_process(const int16_t *audio_data, size_t audio_data_size,
                                 speech_command_t *command, uint8_t *score)
@@ -144,7 +142,10 @@ bool speech_recognition_process(const int16_t *audio_data, size_t audio_data_siz
     }
     
     // Extract features from the audio buffer
-    extract_features(g_audio_buffer, AUDIO_BUFFER_SIZE, g_feature_buffer);
+    if (!extract_features(g_audio_buffer, AUDIO_BUFFER_SIZE, g_feature_buffer)) {
+        ESP_LOGE(TAG, "Feature extraction failed");
+        return false;
+    }
     
     // Copy features to input tensor
     for (int i = 0; i < SPEECH_FEATURE_ELEMENT_COUNT; i++) {
