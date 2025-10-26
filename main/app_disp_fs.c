@@ -22,6 +22,7 @@
 #include "lvgl.h"
 #include "app_disp_fs.h"
 #include "jpeg_decoder.h"
+#include "speech_recognition.h"
 
 /* SPIFFS mount root */
 #define FS_MNT_PATH  BSP_SPIFFS_MOUNT_POINT
@@ -109,6 +110,11 @@ static bool play_file_repeat = false;
 static bool play_file_stop = false;
 static char usb_drive_play_file[250];
 static lv_obj_t *play_btn = NULL, *play1_btn = NULL, *rec_btn = NULL, *rec_stop_btn = NULL;
+
+/* Speech recognition */
+static lv_obj_t *speech_start_btn = NULL;
+static lv_obj_t *speech_result_label = NULL;
+static bool speech_recognition_active = false;
 
 /*******************************************************************************
 * Public API functions
@@ -870,29 +876,25 @@ static void rec_event_cb(lv_event_t *e)
 }
 
 // Speech recognition task
-// ToDo: interface to https://github.com/espressif/esp-tflite-micro
-// here: audio data is recorded in recording_buffer, 
+// Implements interface to TFLite Micro for speech recognition
+// Audio data is recorded in recording_buffer, 
 // sampling rate = 16000 Hz, 16 bit, mono
 // buffer length = BUFFER_SIZE (1024 bytes)
-// this recording_buffer is equal to the g_i2s_read_buffer in "audio_provider.cc"
-// and contains the raw audio data. This data needs to be processed, features extracted
-// and a TFLite inference based on the model given in "model.cc" needs to be done.
-// 0. audio data is stored in recording_buffer
-// 1. recording_buffer needs to be transferred into g_audio_capture_buffer (ringbuf_t) as in "audio_provider.cc"
-// 2. g_audio_capture_buffer should be handled as in "audio_provider.cc", e.g. in function "GetAudioSamples"
-//    its an sliding-window-approach, where parts of data are taken from history and parts are new
-// 3. features need to be extracted as in "feature_provider.cc", e.g. in function "PopulateFeatureData"
-// 4. inference needs to be done as in "main_functions.cc" with model from "model.cc", e.g. in function "RunInference" / interpreter->Invoke()
-// 5. postprocessing needs to be done as in "main_.cc",
-// 6. finally the recognized command can be ("silence", "unknown", "yes", "no")
-//    and can displayed or acted upon
+// Recognition runs for up to 30 seconds
 static void recog_speech(void *arg)
 {
 #if BSP_CAPS_AUDIO_MIC
-        
+    ESP_LOGI(TAG, "Starting speech recognition task");
+    
     int16_t *recording_buffer = heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_DEFAULT);
     if (recording_buffer == NULL) {
-        ESP_LOGE(TAG, "Not enough memory for playing!");
+        ESP_LOGE(TAG, "Not enough memory for speech recognition!");
+        goto END;
+    }
+
+    // Initialize speech recognition
+    if (!speech_recognition_init()) {
+        ESP_LOGE(TAG, "Failed to initialize speech recognition");
         goto END;
     }
 
@@ -904,21 +906,74 @@ static void recog_speech(void *arg)
     };
     esp_codec_dev_open(mic_codec_dev, &fs);
     
-    // ToDo: change this to process the audio data for speech recognition
-    // limit this loop to ca. 30 s of recording for speech recognition
-    while (bytes_written_to_spiffs < RECORDING_LENGTH * BUFFER_SIZE) {
-        ESP_ERROR_CHECK(esp_codec_dev_read(mic_codec_dev, recording_buffer, BUFFER_SIZE));
+    speech_recognition_active = true;
+    
+    // Recognition loop - limit to 30 seconds (30 seconds * 16000 Hz * 2 bytes/sample)
+    const size_t max_bytes = 30 * SAMPLE_RATE * sizeof(int16_t);
+    size_t bytes_processed = 0;
+    
+    ESP_LOGI(TAG, "Listening for commands (30 second limit)...");
+    
+    while (bytes_processed < max_bytes && speech_recognition_active) {
+        // Read audio data
+        esp_err_t ret = esp_codec_dev_read(mic_codec_dev, recording_buffer, BUFFER_SIZE);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read audio data");
+            break;
+        }
+        
+        bytes_processed += BUFFER_SIZE;
+        
+        // Process audio for speech recognition
+        speech_command_t command;
+        uint8_t score;
+        
+        if (speech_recognition_process(recording_buffer, BUFFER_SIZE, &command, &score)) {
+            // Only report non-silence commands with reasonable confidence
+            if (command != SPEECH_CMD_SILENCE && score > 150) {
+                const char *cmd_str = speech_command_to_string(command);
+                ESP_LOGI(TAG, "Command recognized: %s (confidence: %d/255)", cmd_str, score);
+                
+                // Update UI with recognized command
+                if (speech_result_label) {
+                    char result_text[64];
+                    snprintf(result_text, sizeof(result_text), "Recognized: %s (%d%%)", 
+                            cmd_str, (score * 100) / 255);
+                    
+                    bsp_display_lock(0);
+                    lv_label_set_text(speech_result_label, result_text);
+                    bsp_display_unlock();
+                }
+            }
+        }
+        
+        // Small delay to prevent overwhelming the system
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
+    
+    ESP_LOGI(TAG, "Speech recognition stopped after processing %d bytes", bytes_processed);
 
 END:
+    speech_recognition_active = false;
+    speech_recognition_cleanup();
     esp_codec_dev_close(mic_codec_dev);
+    
     if (recording_buffer) {
         free(recording_buffer);
+    }
+    
+    // Re-enable start button
+    if (speech_start_btn) {
+        bsp_display_lock(0);
+        lv_obj_clear_state(speech_start_btn, LV_STATE_DISABLED);
+        lv_label_set_text(lv_obj_get_child(speech_start_btn, 0), "START RECOGNITION");
+        bsp_display_unlock();
     }
 
     vTaskDelete(NULL);
 #else
-    ESP_LOGI(TAG, "Recording not supported!");
+    ESP_LOGI(TAG, "Speech recognition not supported - microphone not available!");
+    vTaskDelete(NULL);
 #endif
 }
 
@@ -927,11 +982,24 @@ static void speech_event_cb(lv_event_t *e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
     if (code == LV_EVENT_CLICKED) {
-        ESP_LOGI(TAG, "Speech recognition started...");
-        // Placeholder for speech recognition functionality
-        
-        /* start speech recognition thread */
-        xTaskCreate(recog_speech, "recog_speech", 4096, lv_event_get_user_data(e), 6, NULL);
+        if (!speech_recognition_active) {
+            ESP_LOGI(TAG, "Speech recognition started...");
+            
+            // Disable button and update label
+            lv_obj_add_state(obj, LV_STATE_DISABLED);
+            lv_label_set_text(lv_obj_get_child(obj, 0), "LISTENING...");
+            
+            // Clear previous result
+            if (speech_result_label) {
+                lv_label_set_text(speech_result_label, "Waiting for command...");
+            }
+            
+            /* start speech recognition thread */
+            xTaskCreate(recog_speech, "recog_speech", 8192, lv_event_get_user_data(e), 6, NULL);
+        } else {
+            ESP_LOGI(TAG, "Stopping speech recognition...");
+            speech_recognition_active = false;
+        }
     }
 }
 
@@ -952,7 +1020,17 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     lv_obj_set_flex_flow(screen, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(screen, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    /* Buttons */
+    /* Title label */
+    lv_obj_t *title_row = lv_obj_create(screen);
+    lv_obj_set_size(title_row, BSP_LCD_H_RES - 20, 40);
+    lv_obj_set_style_bg_opa(title_row, 0, 0);
+    lv_obj_set_style_border_width(title_row, 0, 0);
+    label = lv_label_create(title_row);
+    lv_label_set_text_static(label, "Speech Recognition");
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_center(label);
+
+    /* Start button */
     lv_obj_t *cont_row = lv_obj_create(screen);
     lv_obj_set_size(cont_row, BSP_LCD_H_RES - 20, 80);
     lv_obj_align(cont_row, LV_ALIGN_CENTER, 0, 0);
@@ -961,28 +1039,43 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     lv_obj_set_style_pad_bottom(cont_row, 2, 0);
     lv_obj_set_flex_align(cont_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    /* Rec button */
-    rec_btn = lv_btn_create(cont_row);
-    label = lv_label_create(rec_btn);
+    speech_start_btn = lv_btn_create(cont_row);
+    label = lv_label_create(speech_start_btn);
     lv_label_set_text_static(label, "START RECOGNITION");
-    lv_obj_add_event_cb(rec_btn, speech_event_cb, LV_EVENT_CLICKED, (char *)REC_FILENAME);
+    lv_obj_add_event_cb(speech_start_btn, speech_event_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *new_row = lv_obj_create(screen);
-    lv_obj_set_size(new_row, BSP_LCD_H_RES - 20, 80);
-    lv_obj_align(new_row, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_flex_flow(new_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_top(new_row, 2, 0);
-    lv_obj_set_style_pad_bottom(new_row, 2, 0);
-    lv_obj_set_flex_align(new_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* Labels YES and NO */
-    label = lv_label_create(new_row);
-    lv_label_set_text_static(label, "YES");
-    lv_obj_align(label, LV_ALIGN_CENTER, -40, 0);
-    label = lv_label_create(new_row);
-    lv_label_set_text_static(label, "NO");
-    lv_obj_align(label, LV_ALIGN_CENTER, 40, 0);
+    /* Result label */
+    lv_obj_t *result_row = lv_obj_create(screen);
+    lv_obj_set_size(result_row, BSP_LCD_H_RES - 20, 60);
+    lv_obj_set_style_bg_opa(result_row, 0, 0);
+    lv_obj_set_style_border_width(result_row, 0, 0);
     
+    speech_result_label = lv_label_create(result_row);
+    lv_label_set_text_static(speech_result_label, "Ready");
+    lv_obj_set_style_text_font(speech_result_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(speech_result_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_center(speech_result_label);
+
+    /* Commands info */
+    lv_obj_t *info_row = lv_obj_create(screen);
+    lv_obj_set_size(info_row, BSP_LCD_H_RES - 20, 80);
+    lv_obj_set_style_bg_opa(info_row, 0, 0);
+    lv_obj_set_style_border_width(info_row, 0, 0);
+    lv_obj_set_flex_flow(info_row, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(info_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    label = lv_label_create(info_row);
+    lv_label_set_text_static(label, "Commands:");
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    
+    label = lv_label_create(info_row);
+    lv_label_set_text_static(label, "YES / NO");
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_BLUE), 0);
+    
+    if (group) {
+        lv_group_add_obj(group, speech_start_btn);
+    }
 }
 
 static void app_disp_lvgl_show_record(lv_obj_t *screen, lv_group_t *group)

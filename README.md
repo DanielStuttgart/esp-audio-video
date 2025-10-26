@@ -46,6 +46,7 @@ The application allows users to:
 - **🎤 Audio Recording** - Record audio clips using the built-in microphone
 - **🔊 Volume Control** - Adjustable speaker volume (0-100%)
 - **📊 Audio Format Support** - Mono/Stereo, various sample rates
+- **🗣️ Speech Recognition** - Real-time voice command recognition (yes/no) using TensorFlow Lite Micro
 
 ### File System Features
 - **💾 SPIFFS Integration** - 3MB storage for files
@@ -252,7 +253,7 @@ After flashing, the application will automatically:
 
 ### User Interface
 
-The application has three main tabs:
+The application has four main tabs:
 
 #### 1. 📂 Files Tab
 - **Browse Files:** Touch any file in the list to open it
@@ -266,7 +267,14 @@ The application has three main tabs:
 - **Playback:** Press "Play Recording" to hear your recorded audio
 - **Status:** Watch the status label for recording/playback information
 
-#### 3. ⚙️ Settings Tab
+#### 3. 👁️ Speech Tab
+- **Start Recognition:** Press "START RECOGNITION" to begin listening for voice commands
+- **Voice Commands:** Say "yes" or "no" clearly
+- **Recognition Display:** Recognized commands appear on screen with confidence percentage
+- **Timeout:** Recognition automatically stops after 30 seconds
+- **Note:** Requires TFLite model setup - see [SPEECH_RECOGNITION.md](SPEECH_RECOGNITION.md)
+
+#### 4. ⚙️ Settings Tab
 - **Volume Control:** Use the slider to adjust speaker volume (0-100%)
 - **Brightness Control:** Use the slider to adjust display brightness (0-100%)
 - **Info Display:** View current settings and system information
