@@ -45,9 +45,6 @@ static Features g_features;
 static int16_t g_audio_buffer[AUDIO_BUFFER_SIZE];
 static int g_audio_buffer_pos = 0;
 
-// Flag to track feature generator initialization
-static bool g_feature_gen_initialized = false;
-
 bool speech_recognition_init(void)
 {
     ESP_LOGI(TAG, "Initializing speech recognition...");
@@ -100,7 +97,6 @@ bool speech_recognition_init(void)
         ESP_LOGE(TAG, "InitializeMicroFeatures() failed");
         return false;
     }
-    g_feature_gen_initialized = true;
     
     ESP_LOGI(TAG, "Speech recognition initialized successfully");
     return true;

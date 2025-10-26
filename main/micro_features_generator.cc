@@ -89,9 +89,6 @@ TfLiteStatus InitializeMicroFeatures() {
     return kTfLiteError;
   }
 
-  // MicroPrintf("AudioPreprocessor model arena size = %u",
-  //             interpreter.arena_used_bytes());
-
   return kTfLiteOk;
 }
 
@@ -105,6 +102,7 @@ TfLiteStatus GenerateSingleFeature(const int16_t* audio_data,
               tflite::GetTensorData<int16_t>(input));
   if (interpreter->Invoke() != kTfLiteOk) {
     MicroPrintf("Feature generator model invocation failed");
+    return kTfLiteError;
   }
 
   std::copy_n(tflite::GetTensorData<int8_t>(output), kFeatureSize,
