@@ -1027,12 +1027,13 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     lv_obj_set_style_border_width(title_row, 0, 0);
     label = lv_label_create(title_row);
     lv_label_set_text_static(label, "Speech Recognition");
+    lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_GREY), 0);
     //lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
     lv_obj_center(label);
 
     /* Start button */
     lv_obj_t *cont_row = lv_obj_create(screen);
-    lv_obj_set_size(cont_row, BSP_LCD_H_RES - 20, 80);
+    lv_obj_set_size(cont_row, BSP_LCD_H_RES - 20, 60);
     lv_obj_align(cont_row, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_flex_flow(cont_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_top(cont_row, 2, 0);
@@ -1051,7 +1052,7 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     lv_obj_set_style_border_width(result_row, 0, 0);
     
     speech_result_label = lv_label_create(result_row);
-    lv_label_set_text_static(speech_result_label, "Ready");
+    lv_label_set_text_static(speech_result_label, "Ready");    
     lv_obj_set_style_text_font(speech_result_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(speech_result_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_center(speech_result_label);
@@ -1064,8 +1065,8 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     lv_obj_set_flex_flow(info_row, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(info_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    label = lv_label_create(info_row);
-    lv_label_set_text_static(label, "Commands:");
+    //label = lv_label_create(info_row);
+    //lv_label_set_text_static(label, "Commands:");
     //lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
     
     label = lv_label_create(info_row);
