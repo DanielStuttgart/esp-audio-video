@@ -12,6 +12,16 @@ constexpr int kFeatureSliceSize = 40;
 constexpr int kFeatureSliceCount = 49;
 constexpr int kFeatureElementCount = (kFeatureSliceSize * kFeatureSliceCount);
 
+// Alternative names used by micro_features_generator
+constexpr int kFeatureSize = kFeatureSliceSize;
+constexpr int kFeatureCount = kFeatureSliceCount;
+
+// Audio processing settings
+constexpr int kMaxAudioSampleSize = 512;
+constexpr int kAudioSampleFrequency = 16000;
+constexpr int kFeatureStrideMs = 20;
+constexpr int kFeatureDurationMs = 30;
+
 constexpr int kCategoryCount = 4;
 constexpr int kSilenceIndex = 0;
 constexpr int kUnknownIndex = 1;
