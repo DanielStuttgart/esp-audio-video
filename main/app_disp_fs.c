@@ -31,13 +31,17 @@
    I2S peripheral -> I2S buffer (DMA) -> App buffer (RAM) -> SPIFFS buffer -> External SPI Flash.
    Vice versa for playback. */
 #define BUFFER_SIZE     (1024)
-#define SAMPLE_RATE     (22050)
+//#define SAMPLE_RATE     (22050)
+#define SAMPLE_RATE     (16000)
 #define DEFAULT_VOLUME  (70)
 /* The recording will be RECORDING_LENGTH * BUFFER_SIZE long (in bytes)
    With sampling frequency 22050 Hz and 16bit mono resolution it equals to ~3.715 seconds */
 #define RECORDING_LENGTH (160)
 
 #define REC_FILENAME    FS_MNT_PATH"/recording.wav"
+
+const int32_t kAudioCaptureBufferSize = 40000;
+const int32_t i2s_bytes_to_read = 3200;
 
 static const char *TAG = "DISP";
 
@@ -860,8 +864,62 @@ static void rec_event_cb(lv_event_t *e)
             lv_obj_add_state(play1_btn, LV_STATE_DISABLED);
             lv_obj_add_state(rec_stop_btn, LV_STATE_DISABLED);
         }
+        ESP_LOGI(TAG, "Recording started...");
         xTaskCreate(rec_file, "rec_file", 4096, lv_event_get_user_data(e), 6, NULL);
     }
+}
+
+// Speech recognition task
+// ToDo: interface to https://github.com/espressif/esp-tflite-micro
+// here: audio data is recorded in recording_buffer, 
+// sampling rate = 16000 Hz, 16 bit, mono
+// buffer length = BUFFER_SIZE (1024 bytes)
+// this recording_buffer is equal to the g_i2s_read_buffer in "audio_provider.cc"
+// and contains the raw audio data. This data needs to be processed, features extracted
+// and a TFLite inference based on the model given in "model.cc" needs to be done.
+// 0. audio data is stored in recording_buffer
+// 1. recording_buffer needs to be transferred into g_audio_capture_buffer (ringbuf_t) as in "audio_provider.cc"
+// 2. g_audio_capture_buffer should be handled as in "audio_provider.cc", e.g. in function "GetAudioSamples"
+//    its an sliding-window-approach, where parts of data are taken from history and parts are new
+// 3. features need to be extracted as in "feature_provider.cc", e.g. in function "PopulateFeatureData"
+// 4. inference needs to be done as in "main_functions.cc" with model from "model.cc", e.g. in function "RunInference" / interpreter->Invoke()
+// 5. postprocessing needs to be done as in "main_.cc",
+// 6. finally the recognized command can be ("silence", "unknown", "yes", "no")
+//    and can displayed or acted upon
+static void recog_speech(void *arg)
+{
+#if BSP_CAPS_AUDIO_MIC
+        
+    int16_t *recording_buffer = heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_DEFAULT);
+    if (recording_buffer == NULL) {
+        ESP_LOGE(TAG, "Not enough memory for playing!");
+        goto END;
+    }
+
+    esp_codec_dev_sample_info_t fs = {
+        .sample_rate = SAMPLE_RATE,
+        .channel = 1,
+        .bits_per_sample = 16,
+        .mclk_multiple = I2S_MCLK_MULTIPLE_384,
+    };
+    esp_codec_dev_open(mic_codec_dev, &fs);
+    
+    // ToDo: change this to process the audio data for speech recognition
+    // limit this loop to ca. 30 s of recording for speech recognition
+    while (bytes_written_to_spiffs < RECORDING_LENGTH * BUFFER_SIZE) {
+        ESP_ERROR_CHECK(esp_codec_dev_read(mic_codec_dev, recording_buffer, BUFFER_SIZE));
+    }
+
+END:
+    esp_codec_dev_close(mic_codec_dev);
+    if (recording_buffer) {
+        free(recording_buffer);
+    }
+
+    vTaskDelete(NULL);
+#else
+    ESP_LOGI(TAG, "Recording not supported!");
+#endif
 }
 
 static void speech_event_cb(lv_event_t *e) {
@@ -871,6 +929,9 @@ static void speech_event_cb(lv_event_t *e) {
     if (code == LV_EVENT_CLICKED) {
         ESP_LOGI(TAG, "Speech recognition started...");
         // Placeholder for speech recognition functionality
+        
+        /* start speech recognition thread */
+        xTaskCreate(recog_speech, "recog_speech", 4096, lv_event_get_user_data(e), 6, NULL);
     }
 }
 
@@ -905,6 +966,23 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     label = lv_label_create(rec_btn);
     lv_label_set_text_static(label, "START RECOGNITION");
     lv_obj_add_event_cb(rec_btn, speech_event_cb, LV_EVENT_CLICKED, (char *)REC_FILENAME);
+
+    lv_obj_t *new_row = lv_obj_create(screen);
+    lv_obj_set_size(new_row, BSP_LCD_H_RES - 20, 80);
+    lv_obj_align(new_row, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_flex_flow(new_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_top(new_row, 2, 0);
+    lv_obj_set_style_pad_bottom(new_row, 2, 0);
+    lv_obj_set_flex_align(new_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    /* Labels YES and NO */
+    label = lv_label_create(new_row);
+    lv_label_set_text_static(label, "YES");
+    lv_obj_align(label, LV_ALIGN_CENTER, -40, 0);
+    label = lv_label_create(new_row);
+    lv_label_set_text_static(label, "NO");
+    lv_obj_align(label, LV_ALIGN_CENTER, 40, 0);
+    
 }
 
 static void app_disp_lvgl_show_record(lv_obj_t *screen, lv_group_t *group)
