@@ -74,6 +74,7 @@ typedef struct __attribute__((packed))
 *******************************************************************************/
 static void app_disp_lvgl_show_settings(lv_obj_t *screen, lv_group_t *group);
 static void app_disp_lvgl_show_record(lv_obj_t *screen, lv_group_t *group);
+static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group);
 static void app_disp_lvgl_show_filesystem(lv_obj_t *screen, lv_group_t *group);
 static void app_disp_lvgl_show_files(const char *path);
 static void tab_changed_event(lv_event_t *e);
@@ -88,6 +89,7 @@ static lv_obj_t *tab_btns = NULL;
 static lv_group_t *filesystem_group = NULL;
 static lv_group_t *recording_group = NULL;
 static lv_group_t *settings_group = NULL;
+static lv_group_t *speech_group = NULL;
 
 /* FS */
 static lv_obj_t *fs_list = NULL;
@@ -127,16 +129,18 @@ void app_disp_lvgl_show(void)
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
 
     /* Add tabs (the tabs are page (lv_page) and can be scrolled */
-    lv_obj_t *tab_filesystem = lv_tabview_add_tab(tabview, LV_SYMBOL_LIST" File System");
+    lv_obj_t *tab_filesystem = lv_tabview_add_tab(tabview, LV_SYMBOL_LIST" Files");
     lv_obj_t *tab_rec = lv_tabview_add_tab(tabview, LV_SYMBOL_AUDIO" Record");
-    lv_obj_t *tab_settings = lv_tabview_add_tab(tabview, LV_SYMBOL_SETTINGS" Settings");
-
+    lv_obj_t *tab_settings = lv_tabview_add_tab(tabview, LV_SYMBOL_SETTINGS" Setup");
+    lv_obj_t *tab_speech = lv_tabview_add_tab(tabview, LV_SYMBOL_EYE_OPEN " Speech");
+    
     /* Input device group */
     lv_indev_t *indev = bsp_display_get_input_dev();
     if (indev && lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
         filesystem_group = lv_group_create();
         recording_group = lv_group_create();
         settings_group = lv_group_create();
+        speech_group = lv_group_create();
         lv_group_add_obj(filesystem_group, tab_btns);
         lv_indev_set_group(indev, filesystem_group);
         ESP_LOGI(TAG, "Input device group was set.");
@@ -147,6 +151,9 @@ void app_disp_lvgl_show(void)
 
     /* Show record tab page */
     app_disp_lvgl_show_record(tab_rec, recording_group);
+
+    /* Show speech tab page */
+    app_disp_lvgl_show_speech(tab_speech, speech_group);
 
     /* Show settings tab page */
     app_disp_lvgl_show_settings(tab_settings, settings_group);
@@ -857,6 +864,49 @@ static void rec_event_cb(lv_event_t *e)
     }
 }
 
+static void speech_event_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *obj = lv_event_get_target(e);
+
+    if (code == LV_EVENT_CLICKED) {
+        ESP_LOGI(TAG, "Speech recognition started...");
+        // Placeholder for speech recognition functionality
+    }
+}
+
+static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
+{
+    lv_obj_t *label;
+
+    /* Disable scrolling in this TAB */
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* TAB style */
+    lv_obj_set_style_border_width(screen, 0, 0);
+    lv_obj_set_style_bg_color(screen, lv_color_make(0x00, 0x00, 0x00), 0);
+    lv_obj_set_style_bg_grad_color(screen, lv_color_make(0x05, 0x05, 0x05), 0);
+    lv_obj_set_style_bg_grad_dir(screen, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_opa(screen, 255, 0);
+
+    lv_obj_set_flex_flow(screen, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(screen, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    /* Buttons */
+    lv_obj_t *cont_row = lv_obj_create(screen);
+    lv_obj_set_size(cont_row, BSP_LCD_H_RES - 20, 80);
+    lv_obj_align(cont_row, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_flex_flow(cont_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_top(cont_row, 2, 0);
+    lv_obj_set_style_pad_bottom(cont_row, 2, 0);
+    lv_obj_set_flex_align(cont_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    /* Rec button */
+    rec_btn = lv_btn_create(cont_row);
+    label = lv_label_create(rec_btn);
+    lv_label_set_text_static(label, "START RECOGNITION");
+    lv_obj_add_event_cb(rec_btn, speech_event_cb, LV_EVENT_CLICKED, (char *)REC_FILENAME);
+}
+
 static void app_disp_lvgl_show_record(lv_obj_t *screen, lv_group_t *group)
 {
     lv_obj_t *label;
@@ -961,6 +1011,7 @@ static void set_tab_group(void)
         uint16_t tab = lv_tabview_get_tab_act(tabview);
         lv_group_set_editing(filesystem_group, false);
         lv_group_set_editing(recording_group, false);
+        lv_group_set_editing(speech_group, false);
         lv_group_set_editing(settings_group, false);
         //lv_group_remove_obj(tab_btns);
         switch (tab) {
@@ -973,6 +1024,10 @@ static void set_tab_group(void)
             lv_indev_set_group(indev, recording_group);
             break;
         case 2:
+            lv_group_add_obj(speech_group, tab_btns);
+            lv_indev_set_group(indev, speech_group);
+            break;
+        case 3:
             lv_group_add_obj(settings_group, tab_btns);
             lv_indev_set_group(indev, settings_group);
             break;
