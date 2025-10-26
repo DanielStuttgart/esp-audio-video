@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +22,7 @@ extern "C" {
 #define SPEECH_FEATURE_ELEMENT_COUNT (SPEECH_FEATURE_SLICE_SIZE * SPEECH_FEATURE_SLICE_COUNT)
 
 // Command labels
-typedef enum {
+typedef enum speech_command {
     SPEECH_CMD_SILENCE = 0,
     SPEECH_CMD_UNKNOWN = 1,
     SPEECH_CMD_YES = 2,

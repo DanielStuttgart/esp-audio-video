@@ -1027,7 +1027,7 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
     lv_obj_set_style_border_width(title_row, 0, 0);
     label = lv_label_create(title_row);
     lv_label_set_text_static(label, "Speech Recognition");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    //lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
     lv_obj_center(label);
 
     /* Start button */
@@ -1066,11 +1066,11 @@ static void app_disp_lvgl_show_speech(lv_obj_t *screen, lv_group_t *group)
 
     label = lv_label_create(info_row);
     lv_label_set_text_static(label, "Commands:");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    //lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
     
     label = lv_label_create(info_row);
     lv_label_set_text_static(label, "YES / NO");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    //lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label, lv_palette_main(LV_PALETTE_BLUE), 0);
     
     if (group) {
